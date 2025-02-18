@@ -4,6 +4,9 @@ import net from 'net';
 import gazeRoutes from './routes/gaze';
 import path from 'path';
 import fs from 'fs/promises';
+import { rateLimit } from 'express-rate-limit';
+import helmet from 'helmet';
+import { validationResult } from 'express-validator';
 
 const app = express();
 const DEFAULT_PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
@@ -34,11 +37,47 @@ async function findAvailablePort(startPort: number): Promise<number> {
   throw new Error(`No available ports found between ${startPort} and ${startPort + MAX_PORT_ATTEMPTS - 1}`);
 }
 
-app.use(cors());
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use('/api/', limiter);
+
+// CORS configuration
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.ALLOWED_ORIGIN 
+    : 'http://localhost:3000',
+  methods: ['GET', 'POST', 'DELETE'],
+  allowedHeaders: ['Content-Type']
+}));
+
 app.use(express.json({ limit: '50mb' }));
 
 // API Routes
 app.use('/api', gazeRoutes);
+
+// Global error handler
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error(err.stack);
+
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation Error',
+      details: err.message
+    });
+  }
+
+  res.status(500).json({
+    error: process.env.NODE_ENV === 'production' 
+      ? 'Internal Server Error' 
+      : err.message
+  });
+});
 
 // Ensure data directories exist
 async function ensureDirectories() {
