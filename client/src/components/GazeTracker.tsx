@@ -1,9 +1,11 @@
+/// <reference types="react" />
+
 import React, { useCallback, useState } from 'react';
 import { startTracking, stopTracking } from '../lib/gazecloud';
 import { fetchApi } from '../lib/api';
 import type { GazeData, SessionConfig } from '../types/gazeData';
 
-export default function SessionControl() {
+export default function GazeTracker() {
   const [isTracking, setIsTracking] = useState(false);
   const [config, setConfig] = useState<SessionConfig>({
     participantId: '',
@@ -36,10 +38,9 @@ export default function SessionControl() {
     stopTracking();
     setIsTracking(false);
 
-    // End current session
+    // End current session using DELETE
     await fetchApi('api/sessions/current', {
-      method: 'PUT',
-      body: JSON.stringify({ status: 'completed' })
+      method: 'DELETE'
     });
 
     // Reset config
@@ -60,10 +61,12 @@ export default function SessionControl() {
             type="text"
             id="participantId"
             value={config.participantId}
-            onChange={(e) => setConfig((prev: SessionConfig) => ({
-              ...prev,
-              participantId: e.target.value
-            }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+              setConfig((prev: SessionConfig) => ({
+                ...prev,
+                participantId: e.target.value
+              }))
+            }
             disabled={isTracking}
           />
         </div>
@@ -73,10 +76,12 @@ export default function SessionControl() {
             <input
               type="checkbox"
               checked={config.isPilot}
-              onChange={(e) => setConfig((prev: SessionConfig) => ({
-                ...prev,
-                isPilot: e.target.checked
-              }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                setConfig((prev: SessionConfig) => ({
+                  ...prev,
+                  isPilot: e.target.checked
+                }))
+              }
               disabled={isTracking}
             />
             Pilot Session
