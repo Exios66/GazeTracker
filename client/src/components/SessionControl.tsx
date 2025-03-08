@@ -1,80 +1,260 @@
-import React, { useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { GazeData } from "../types/gazeData";
-import { fetchApi } from "../lib/api";
+import React, { useState, useCallback, useEffect } from 'react';
+import { startTracking, stopTracking } from '../lib/gazecloud';
+import type { GazeData } from '../types/gazeData';
+import RecordingSession from './RecordingSession';
+import SessionConfig, { SessionConfigData } from './SessionConfig';
+import { format } from 'date-fns';
 
-const Heatmap = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+interface EnhancedGazeData extends GazeData {
+  participantId: string;
+  sessionType: 'pilot' | 'live';
+  formattedTime: string;
+  formattedDate: string;
+  sessionTime: number;
+  sessionTimeFormatted: string;
+}
 
-  // Fetch historical gaze data
-  const { data: gazeData } = useQuery<GazeData[]>({
-    queryKey: ["gaze-data"],
-    queryFn: () => fetchApi("api/sessions/current/gaze"),
-  });
+const SessionControl: React.FC = () => {
+  const [isTracking, setIsTracking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [calibrationComplete, setCalibrationComplete] = useState(false);
+  const [gazeData, setGazeData] = useState<EnhancedGazeData[]>([]);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [sessionConfig, setSessionConfig] = useState<SessionConfigData | null>(null);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [lastLoggedCount, setLastLoggedCount] = useState<number>(0);
 
+  // Add periodic logging effect
   useEffect(() => {
-    if (!canvasRef.current || !gazeData) return;
+    let intervalId: NodeJS.Timeout;
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (isTracking && !isPaused && sessionConfig?.isPilot) {
+      intervalId = setInterval(() => {
+        const currentCount = gazeData.length;
+        if (currentCount > lastLoggedCount) {
+          const now = new Date();
+          const rate = ((currentCount - lastLoggedCount) / 5).toFixed(1); // points per second
+          setDebugLog(prev => [
+            ...prev,
+            `[${format(now, 'HH:mm:ss.SSS')}] Collection Status: ${currentCount} total points (${rate} pts/sec)`
+          ].slice(-100));
+          setLastLoggedCount(currentCount);
+        }
+      }, 5000); // Log every 5 seconds
+    }
 
-    const width = canvas.width;
-    const height = canvas.height;
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isTracking, isPaused, sessionConfig, gazeData.length, lastLoggedCount]);
 
-    // Create array for heatmap data
-    const heatmapData = new Uint8ClampedArray(width * height * 4);
+  const handleGazeData = useCallback((data: GazeData) => {
+    if (!startTime || !sessionConfig || isPaused) return;
 
-    // Process each gaze point
-    gazeData.forEach(point => {
-      const x = Math.floor(point.x);
-      const y = Math.floor(point.y);
+    try {
+      const now = new Date();
+      const sessionDuration = Date.now() - startTime;
+      
+      const enhancedData: EnhancedGazeData = {
+        ...data,
+        participantId: sessionConfig.participantId,
+        sessionType: sessionConfig.isPilot ? 'pilot' : 'live',
+        formattedTime: format(now, 'HH:mm:ss.SSS'),
+        formattedDate: format(now, 'yyyy-MM-dd'),
+        sessionTime: sessionDuration,
+        sessionTimeFormatted: format(sessionDuration, 'mm:ss.SSS')
+      };
 
-      if (x >= 0 && x < width && y >= 0 && y < height) {
-        // Add gaussian blur around each point
-        const radius = 30;
-        const intensity = (point.confidence ?? 0.5) * 255;
+      setGazeData(prev => {
+        const newData = [...prev, enhancedData];
+        
+        if (sessionConfig.isPilot && newData.length % 100 === 0) {
+          setDebugLog(prevLog => [
+            ...prevLog,
+            `[${enhancedData.formattedTime}] Collected ${newData.length} data points`
+          ].slice(-100));
+        }
+        
+        return newData;
+      });
 
-        for (let i = -radius; i <= radius; i++) {
-          for (let j = -radius; j <= radius; j++) {
-            const currentX = x + i;
-            const currentY = y + j;
+      if (sessionConfig.isPilot) {
+        setDebugLog(prev => [
+          ...prev,
+          `[${enhancedData.formattedTime}] Gaze position: (${Math.round(data.x)}, ${Math.round(data.y)}) | Confidence: ${(data.confidence || 0).toFixed(2)}`
+        ].slice(-100));
+      }
+    } catch (error) {
+      console.error('Error processing gaze data:', error);
+      if (sessionConfig.isPilot) {
+        setDebugLog(prev => [
+          ...prev,
+          `[${format(new Date(), 'HH:mm:ss.SSS')}] Error processing gaze data: ${error}`
+        ].slice(-100));
+      }
+    }
+  }, [startTime, sessionConfig, isPaused]);
 
-            if (currentX >= 0 && currentX < width && currentY >= 0 && currentY < height) {
-              const distance = Math.sqrt(i * i + j * j);
-              const gaussianFactor = Math.exp(-(distance * distance) / (2 * (radius / 2) * (radius / 2)));
-              const index = (currentY * width + currentX) * 4;
-
-              heatmapData[index] = Math.min(255, heatmapData[index] + intensity * gaussianFactor); // Red
-              heatmapData[index + 1] = 0; // Green
-              heatmapData[index + 2] = 0; // Blue
-              heatmapData[index + 3] = Math.min(255, heatmapData[index + 3] + intensity * gaussianFactor); // Alpha
-            }
-          }
+  const handleStartTracking = () => {
+    if (!sessionConfig) return;
+    
+    setGazeData([]);
+    setDebugLog([]);
+    setLastLoggedCount(0);
+    setStartTime(Date.now());
+    setIsPaused(false);
+    startTracking(
+      handleGazeData,
+      () => {
+        setCalibrationComplete(true);
+        if (sessionConfig.isPilot) {
+          setDebugLog(prev => [...prev, `[${format(new Date(), 'HH:mm:ss.SSS')}] Calibration complete`]);
         }
       }
+    );
+    setIsTracking(true);
+  };
+
+  const handleStopTracking = () => {
+    stopTracking();
+    setIsTracking(false);
+    setIsPaused(false);
+    setCalibrationComplete(false);
+    if (sessionConfig?.isPilot) {
+      setDebugLog(prev => [...prev, `[${format(new Date(), 'HH:mm:ss.SSS')}] Session stopped`]);
+    }
+  };
+
+  const handlePause = () => {
+    setIsPaused(true);
+    if (sessionConfig?.isPilot) {
+      setDebugLog(prev => [...prev, `[${format(new Date(), 'HH:mm:ss.SSS')}] Session paused`]);
+    }
+  };
+
+  const handleResume = () => {
+    setIsPaused(false);
+    if (sessionConfig?.isPilot) {
+      setDebugLog(prev => [...prev, `[${format(new Date(), 'HH:mm:ss.SSS')}] Session resumed`]);
+    }
+  };
+
+  const handleKillswitch = () => {
+    stopTracking();
+    setIsTracking(false);
+    setIsPaused(false);
+    setCalibrationComplete(false);
+    setGazeData([]);
+    if (sessionConfig?.isPilot) {
+      setDebugLog(prev => [
+        ...prev, 
+        `[${format(new Date(), 'HH:mm:ss.SSS')}] Session terminated by killswitch`
+      ]);
+    }
+  };
+
+  const handleDiscardSession = () => {
+    setGazeData([]);
+    setStartTime(null);
+    setDebugLog([]);
+    if (sessionConfig?.isPilot) {
+      setDebugLog(prev => [...prev, `[${format(new Date(), 'HH:mm:ss.SSS')}] Session data discarded`]);
+    }
+  };
+
+  const handleExport = () => {
+    const exportData = {
+      sessionInfo: {
+        startTime: startTime,
+        endTime: Date.now(),
+        duration: startTime ? Date.now() - startTime : 0,
+        totalDataPoints: gazeData.length
+      },
+      gazeData: gazeData
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json'
     });
 
-    // Create ImageData and put it on canvas
-    const imageData = new ImageData(heatmapData, width, height);
-    ctx.putImageData(imageData, 0, 0);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `gaze-tracking-session-${new Date().toISOString()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
-  }, [gazeData]);
+  if (!sessionConfig) {
+    return <SessionConfig onConfigSubmit={setSessionConfig} />;
+  }
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={window.innerWidth}
-      height={window.innerHeight}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        pointerEvents: 'none',
-        opacity: 0.6
-      }}
-    />
+    <div className="session-control" style={{ padding: '20px' }}>
+      <div style={{ marginBottom: '20px' }}>
+        <h2>Session Control</h2>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+          <button
+            onClick={isTracking ? handleStopTracking : handleStartTracking}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: isTracking ? '#f44336' : '#4CAF50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            {isTracking ? 'Stop Recording' : 'Start Recording'}
+          </button>
+        </div>
+        <div style={{ fontSize: '14px', color: '#666' }}>
+          <div>Participant ID: {sessionConfig.participantId}</div>
+          <div>Mode: {sessionConfig.isPilot ? 'Pilot' : 'Live'}</div>
+          {calibrationComplete && <div style={{ color: '#4CAF50' }}>✓ Calibration Complete</div>}
+        </div>
+      </div>
+
+      {sessionConfig.isPilot && debugLog.length > 0 && (
+        <div
+          className="debug-log"
+          style={{
+            marginTop: '20px',
+            padding: '10px',
+            backgroundColor: '#f8f9fa',
+            borderRadius: '4px',
+            maxHeight: '200px',
+            overflowY: 'auto',
+            fontSize: '12px',
+            fontFamily: 'monospace'
+          }}
+        >
+          <div style={{ marginBottom: '8px', fontWeight: 'bold' }}>Debug Log:</div>
+          {debugLog.map((log, index) => (
+            <div key={index} style={{ marginBottom: '4px' }}>{log}</div>
+          ))}
+        </div>
+      )}
+
+      <RecordingSession
+        isRecording={isTracking}
+        isPaused={isPaused}
+        startTime={startTime}
+        gazeData={gazeData}
+        onExport={handleExport}
+        isPilot={sessionConfig.isPilot}
+        participantId={sessionConfig.participantId}
+        onDiscard={handleDiscardSession}
+        onPause={handlePause}
+        onResume={handleResume}
+        onKillswitch={sessionConfig.isPilot ? handleKillswitch : undefined}
+      />
+    </div>
   );
 };
 
-export default Heatmap;
+export default SessionControl;

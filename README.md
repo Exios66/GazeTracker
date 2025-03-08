@@ -9,6 +9,7 @@ npm run start:dev
 ```
 
 This command will:
+
 1. Install all dependencies (both client and server)
 2. Start the server with auto-reload
 3. Start the client development server
@@ -27,10 +28,12 @@ This command will:
 ## Port Configuration
 
 The application automatically handles port selection:
+
 - Server default port: 3001 (will automatically find next available port if in use)
 - Client default port: 3000
 
 You can configure the ports using environment variables:
+
 - Server: `PORT` environment variable
 - Client: `PORT` environment variable (when starting the client)
 

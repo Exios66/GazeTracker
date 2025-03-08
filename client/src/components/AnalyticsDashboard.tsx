@@ -1,423 +1,256 @@
-import React, { useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import * as d3 from 'd3';
+import React, { useState } from 'react';
+import SessionDataUploader from './SessionDataUploader';
+import { analyzeGazeData } from '../utils/analyticsUtils';
 import type { GazeData } from '../types/gazeData';
-import { fetchApi } from '../lib/api';
-
-export default function AnalyticsDashboard() {
-  const confidenceChartRef = useRef<SVGSVGElement>(null);
-  const headPoseChartRef = useRef<SVGSVGElement>(null);
-  const fixationChartRef = useRef<SVGSVGElement>(null);
-  const velocityChartRef = useRef<SVGSVGElement>(null);
-  const metricsRef = useRef<HTMLDivElement>(null);
-
-  const { data: gazeData } = useQuery<GazeData[]>({
-    queryKey: ['gaze-data'],
-    queryFn: () => fetchApi('api/sessions/current/gaze'),
-    refetchInterval: 1000,
-  });
-
-  // Confidence Chart
-  useEffect(() => {
-    if (!gazeData?.length || !confidenceChartRef.current) return;
-
-    const width = 400;
-    const height = 200;
-    const margin = { top: 20, right: 20, bottom: 30, left: 40 };
-
-    const svg = d3.select(confidenceChartRef.current);
-    svg.selectAll('*').remove();
-
-    const x = d3.scaleLinear()
-      .domain([0, gazeData.length])
-      .range([margin.left, width - margin.right]);
-
-    const y = d3.scaleLinear()
-      .domain([0, 1])
-      .range([height - margin.bottom, margin.top]);
-
-    const line = d3.line<GazeData>()
-      .x((d, i) => x(i))
-      .y(d => y(d.confidence || 0));
-
-    svg.append('path')
-      .datum(gazeData)
-      .attr('fill', 'none')
-      .attr('stroke', 'steelblue')
-      .attr('stroke-width', 1.5)
-      .attr('d', line);
-
-    svg.append('g')
-      .attr('transform', `translate(0,${height - margin.bottom})`)
-      .call(d3.axisBottom(x).ticks(5));
-
-    svg.append('g')
-      .attr('transform', `translate(${margin.left},0)`)
-      .call(d3.axisLeft(y));
-
-    svg.append('text')
-      .attr('x', width / 2)
-      .attr('y', height - 5)
-      .attr('text-anchor', 'middle')
-      .text('Time');
-
-    svg.append('text')
-      .attr('transform', 'rotate(-90)')
-      .attr('x', -height / 2)
-      .attr('y', 15)
-      .attr('text-anchor', 'middle')
-      .text('Confidence');
-  }, [gazeData]);
-
-  // Head Pose Chart
-  useEffect(() => {
-    if (!gazeData?.length || !headPoseChartRef.current) return;
-
-    const width = 400;
-    const height = 200;
-    const margin = { top: 20, right: 20, bottom: 30, left: 40 };
-
-    const svg = d3.select(headPoseChartRef.current);
-    svg.selectAll('*').remove();
-
-    const x = d3.scaleLinear()
-      .domain([0, gazeData.length])
-      .range([margin.left, width - margin.right]);
-
-    const y = d3.scaleLinear()
-      .domain([-45, 45])
-      .range([height - margin.bottom, margin.top]);
-
-    const yawLine = d3.line<GazeData>()
-      .x((d, i) => x(i))
-      .y(d => y(d.HeadYaw || 0));
-
-    const pitchLine = d3.line<GazeData>()
-      .x((d, i) => x(i))
-      .y(d => y(d.HeadPitch || 0));
-
-    svg.append('path')
-      .datum(gazeData)
-      .attr('fill', 'none')
-      .attr('stroke', 'red')
-      .attr('stroke-width', 1.5)
-      .attr('d', yawLine);
-
-    svg.append('path')
-      .datum(gazeData)
-      .attr('fill', 'none')
-      .attr('stroke', 'blue')
-      .attr('stroke-width', 1.5)
-      .attr('d', pitchLine);
-
-    svg.append('g')
-      .attr('transform', `translate(0,${height - margin.bottom})`)
-      .call(d3.axisBottom(x).ticks(5));
-
-    svg.append('g')
-      .attr('transform', `translate(${margin.left},0)`)
-      .call(d3.axisLeft(y));
-
-    const legend = svg.append('g')
-      .attr('transform', `translate(${width - 100},${margin.top})`);
-
-    legend.append('line')
-      .attr('x1', 0)
-      .attr('x2', 20)
-      .attr('y1', 0)
-      .attr('y2', 0)
-      .attr('stroke', 'red');
-
-    legend.append('text')
-      .attr('x', 25)
-      .attr('y', 5)
-      .text('Yaw');
-
-    legend.append('line')
-      .attr('x1', 0)
-      .attr('x2', 20)
-      .attr('y1', 20)
-      .attr('y2', 20)
-      .attr('stroke', 'blue');
-
-    legend.append('text')
-      .attr('x', 25)
-      .attr('y', 25)
-      .text('Pitch');
-  }, [gazeData]);
-
-  // Fixation Chart
-  useEffect(() => {
-    if (!gazeData?.length || !fixationChartRef.current) return;
-
-    const width = 400;
-    const height = 200;
-    const margin = { top: 20, right: 20, bottom: 30, left: 40 };
-
-    const svg = d3.select(fixationChartRef.current);
-    svg.selectAll('*').remove();
-
-    const x = d3.scaleLinear()
-      .domain([0, gazeData.length])
-      .range([margin.left, width - margin.right]);
-
-    const y = d3.scaleLinear()
-      .domain([0, d3.max(gazeData, d => d.fixationDuration) || 1000])
-      .range([height - margin.bottom, margin.top]);
-
-    const fixationLine = d3.line<GazeData>()
-      .x((d, i) => x(i))
-      .y(d => y(d.fixationDuration || 0));
-
-    const avgFixationLine = d3.line<GazeData>()
-      .x((d, i) => x(i))
-      .y(d => y(d.fixationDuration || 0));
-
-    svg.append('path')
-      .datum(gazeData)
-      .attr('fill', 'none')
-      .attr('stroke', 'green')
-      .attr('stroke-width', 1.5)
-      .attr('d', fixationLine);
-
-    svg.append('path')
-      .datum(gazeData)
-      .attr('fill', 'none')
-      .attr('stroke', 'orange')
-      .attr('stroke-dasharray', '5,5')
-      .attr('stroke-width', 1.5)
-      .attr('d', avgFixationLine);
-
-    svg.append('g')
-      .attr('transform', `translate(0,${height - margin.bottom})`)
-      .call(d3.axisBottom(x).ticks(5));
-
-    svg.append('g')
-      .attr('transform', `translate(${margin.left},0)`)
-      .call(d3.axisLeft(y));
-
-    const legend = svg.append('g')
-      .attr('transform', `translate(${width - 140},${margin.top})`);
-
-    legend.append('line')
-      .attr('x1', 0)
-      .attr('x2', 20)
-      .attr('y1', 0)
-      .attr('y2', 0)
-      .attr('stroke', 'green');
-
-    legend.append('text')
-      .attr('x', 25)
-      .attr('y', 5)
-      .text('Current');
-
-    legend.append('line')
-      .attr('x1', 0)
-      .attr('x2', 20)
-      .attr('y1', 20)
-      .attr('y2', 20)
-      .attr('stroke', 'orange')
-      .attr('stroke-dasharray', '5,5');
-
-    legend.append('text')
-      .attr('x', 25)
-      .attr('y', 25)
-      .text('Average');
-  }, [gazeData]);
-
-  // Velocity Chart
-  useEffect(() => {
-    if (!gazeData?.length || !velocityChartRef.current) return;
-
-    const width = 400;
-    const height = 200;
-    const margin = { top: 20, right: 20, bottom: 30, left: 40 };
-
-    const svg = d3.select(velocityChartRef.current);
-    svg.selectAll('*').remove();
-
-    const x = d3.scaleLinear()
-      .domain([0, gazeData.length])
-      .range([margin.left, width - margin.right]);
-
-    const y = d3.scaleLinear()
-      .domain([0, d3.max(gazeData, d => d.gazeVelocity) || 100])
-      .range([height - margin.bottom, margin.top]);
-
-    const velocityLine = d3.line<GazeData>()
-      .x((d, i) => x(i))
-      .y(d => y(d.gazeVelocity || 0));
-
-    svg.append('path')
-      .datum(gazeData)
-      .attr('fill', 'none')
-      .attr('stroke', 'purple')
-      .attr('stroke-width', 1.5)
-      .attr('d', velocityLine);
-
-    svg.append('g')
-      .attr('transform', `translate(0,${height - margin.bottom})`)
-      .call(d3.axisBottom(x).ticks(5));
-
-    svg.append('g')
-      .attr('transform', `translate(${margin.left},0)`)
-      .call(d3.axisLeft(y));
-
-    svg.append('text')
-      .attr('x', width / 2)
-      .attr('y', height - 5)
-      .attr('text-anchor', 'middle')
-      .text('Time');
-
-    svg.append('text')
-      .attr('transform', 'rotate(-90)')
-      .attr('x', -height / 2)
-      .attr('y', 15)
-      .attr('text-anchor', 'middle')
-      .text('Velocity (px/s)');
-  }, [gazeData]);
-
-  // Live Metrics
-  useEffect(() => {
-    if (!gazeData?.length || !metricsRef.current) return;
-
-    const lastData = gazeData[gazeData.length - 1];
-    const avgConfidence = d3.mean(gazeData, d => d.confidence) || 0;
-
-    const metricsHtml = `
-      <div class="metrics-grid">
-        <div class="metric-group">
-          <h3>Session Info</h3>
-          <div class="metric">
-            <label>Session Time:</label>
-            <span>${lastData.sessionTimeFormatted}</span>
-          </div>
-          <div class="metric">
-            <label>Current Time:</label>
-            <span>${lastData.formattedTime}</span>
-          </div>
-          <div class="metric">
-            <label>Date:</label>
-            <span>${lastData.formattedDate}</span>
-          </div>
-        </div>
-
-        <div class="metric-group">
-          <h3>Eye Tracking Quality</h3>
-          <div class="metric">
-            <label>Current Confidence:</label>
-            <span>${((lastData.confidence || 0) * 100).toFixed(2)}%</span>
-          </div>
-          <div class="metric">
-            <label>Avg Confidence:</label>
-            <span>${(avgConfidence * 100).toFixed(1)}%</span>
-          </div>
-          <div class="metric">
-            <label>Tracking State:</label>
-            <span>${getTrackingState(lastData.state)}</span>
-          </div>
-        </div>
-
-        <div class="metric-group">
-          <h3>Fixation Metrics</h3>
-          <div class="metric">
-            <label>Current Duration:</label>
-            <span>${lastData.fixationDuration?.toFixed(0) || 0}ms</span>
-          </div>
-          <div class="metric">
-            <label>Avg Duration:</label>
-            <span>${lastData.avgFixationDuration?.toFixed(0) || 0}ms</span>
-          </div>
-          <div class="metric">
-            <label>Fixations/min:</label>
-            <span>${lastData.fixationsPerMinute?.toFixed(1) || 0}</span>
-          </div>
-        </div>
-
-        <div class="metric-group">
-          <h3>Movement Metrics</h3>
-          <div class="metric">
-            <label>Current Velocity:</label>
-            <span>${lastData.gazeVelocity?.toFixed(1) || 0} px/s</span>
-          </div>
-          <div class="metric">
-            <label>Saccade Length:</label>
-            <span>${lastData.saccadeLength?.toFixed(1) || 0}px</span>
-          </div>
-          <div class="metric">
-            <label>Avg Saccade:</label>
-            <span>${lastData.avgSaccadeLength?.toFixed(1) || 0}px</span>
-          </div>
-        </div>
-
-        <div class="metric-group">
-          <h3>Head Pose</h3>
-          <div class="metric">
-            <label>Yaw:</label>
-            <span>${lastData.HeadYaw?.toFixed(1) || 0}°</span>
-          </div>
-          <div class="metric">
-            <label>Pitch:</label>
-            <span>${lastData.HeadPitch?.toFixed(1) || 0}°</span>
-          </div>
-          <div class="metric">
-            <label>Roll:</label>
-            <span>${lastData.HeadRoll?.toFixed(1) || 0}°</span>
-          </div>
-        </div>
-
-        <div class="metric-group">
-          <h3>Other Metrics</h3>
-          <div class="metric">
-            <label>Blink Rate:</label>
-            <span>${(lastData.blinkRate || 0).toFixed(1)} blinks/min</span>
-          </div>
-          <div class="metric">
-            <label>Saccades/min:</label>
-            <span>${lastData.saccadesPerMinute?.toFixed(1) || 0}</span>
-          </div>
-          <div class="metric">
-            <label>Pupil Diameter:</label>
-            <span>${lastData.pupilD?.toFixed(2) || 0}</span>
-          </div>
-        </div>
-      </div>
-    `;
-
-    metricsRef.current.innerHTML = metricsHtml;
-  }, [gazeData]);
-
-  function getTrackingState(state?: number): string {
-    switch (state) {
-      case 0: return '✅ Valid';
-      case -1: return '❌ Face Lost';
-      case 1: return '⚠️ Uncalibrated';
-      default: return '❓ Unknown';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ScatterChart, Scatter, ZAxis,
+  BarChart, Bar,
+  ResponsiveContainer
+} from 'recharts';
+
+const AnalyticsDashboard: React.FC = () => {
+  const [analysisResult, setAnalysisResult] = useState<ReturnType<typeof analyzeGazeData> | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'fixations' | 'saccades' | 'head' | 'spatial'>('overview');
+
+  const handleDataLoaded = (data: GazeData[]) => {
+    try {
+      const result = analyzeGazeData(data);
+      setAnalysisResult(result);
+    } catch (error) {
+      console.error('Failed to analyze data:', error);
     }
-  }
+  };
 
-  return (
-    <div className="analytics-dashboard">
-      <h2>Live Analytics</h2>
-      <div ref={metricsRef} className="metrics-container" />
-      <div className="charts-container">
-        <div className="chart">
-          <h3>Gaze Confidence</h3>
-          <svg ref={confidenceChartRef} width="400" height="200" />
-        </div>
-        <div className="chart">
-          <h3>Head Pose</h3>
-          <svg ref={headPoseChartRef} width="400" height="200" />
-        </div>
-        <div className="chart">
-          <h3>Fixation Duration</h3>
-          <svg ref={fixationChartRef} width="400" height="200" />
-        </div>
-        <div className="chart">
-          <h3>Gaze Velocity</h3>
-          <svg ref={velocityChartRef} width="400" height="200" />
-        </div>
+  const renderOverviewTab = () => (
+    <div className="overview-tab">
+      <div className="metrics-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+        gap: '20px',
+        marginBottom: '20px'
+      }}>
+        {analysisResult && (
+          <>
+            <MetricCard
+              title="Session Duration"
+              value={`${(analysisResult.totalDuration / 1000).toFixed(2)}s`}
+            />
+            <MetricCard
+              title="Data Points"
+              value={analysisResult.totalDataPoints.toString()}
+            />
+            <MetricCard
+              title="Sampling Rate"
+              value={`${analysisResult.samplingRate.toFixed(1)} Hz`}
+            />
+            <MetricCard
+              title="Average Confidence"
+              value={`${(analysisResult.averageConfidence * 100).toFixed(1)}%`}
+            />
+          </>
+        )}
       </div>
+
+      {analysisResult && (
+        <div style={{ height: '300px', marginTop: '20px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={analysisResult.fixations}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="startTime" 
+                     label={{ value: 'Time (ms)', position: 'insideBottom', offset: -5 }} />
+              <YAxis label={{ value: 'Duration (ms)', angle: -90, position: 'insideLeft' }} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="duration" stroke="#8884d8" name="Fixation Duration" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
-} 
+
+  const renderFixationsTab = () => (
+    <div className="fixations-tab">
+      {analysisResult && (
+        <>
+          <div className="metrics-grid" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+            gap: '20px',
+            marginBottom: '20px'
+          }}>
+            <MetricCard
+              title="Total Fixations"
+              value={analysisResult.fixations.length.toString()}
+            />
+            <MetricCard
+              title="Average Duration"
+              value={`${analysisResult.averageFixationDuration.toFixed(1)}ms`}
+            />
+            <MetricCard
+              title="Fixations/Minute"
+              value={analysisResult.fixationsPerMinute.toFixed(1)}
+            />
+            <MetricCard
+              title="Fixation Time %"
+              value={`${analysisResult.fixationPercentage.toFixed(1)}%`}
+            />
+          </div>
+
+          <div style={{ height: '400px', marginTop: '20px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart>
+                <CartesianGrid />
+                <XAxis type="number" dataKey="x" name="X Position" unit="px" />
+                <YAxis type="number" dataKey="y" name="Y Position" unit="px" />
+                <ZAxis type="number" dataKey="duration" name="Duration" unit="ms" />
+                <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                <Legend />
+                <Scatter
+                  name="Fixations"
+                  data={analysisResult.fixations}
+                  fill="#8884d8"
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const renderSaccadesTab = () => (
+    <div className="saccades-tab">
+      {analysisResult && (
+        <>
+          <div className="metrics-grid" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+            gap: '20px',
+            marginBottom: '20px'
+          }}>
+            <MetricCard
+              title="Total Saccades"
+              value={analysisResult.saccades.length.toString()}
+            />
+            <MetricCard
+              title="Average Length"
+              value={`${analysisResult.averageSaccadeLength.toFixed(1)}px`}
+            />
+            <MetricCard
+              title="Average Velocity"
+              value={`${analysisResult.averageSaccadeVelocity.toFixed(1)}px/ms`}
+            />
+            <MetricCard
+              title="Saccades/Minute"
+              value={analysisResult.saccadesPerMinute.toFixed(1)}
+            />
+          </div>
+
+          <div style={{ height: '400px', marginTop: '20px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={analysisResult.saccades}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="startTime" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="length" fill="#82ca9d" name="Saccade Length" />
+                <Bar dataKey="velocity" fill="#8884d8" name="Velocity" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const renderHeadMovementTab = () => (
+    <div className="head-movement-tab">
+      {analysisResult && (
+        <>
+          <div className="metrics-grid" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+            gap: '20px',
+            marginBottom: '20px'
+          }}>
+            <MetricCard
+              title="X Range"
+              value={`${analysisResult.headMovementRange.x.range.toFixed(2)} units`}
+            />
+            <MetricCard
+              title="Y Range"
+              value={`${analysisResult.headMovementRange.y.range.toFixed(2)} units`}
+            />
+            <MetricCard
+              title="Z Range"
+              value={`${analysisResult.headMovementRange.z.range.toFixed(2)} units`}
+            />
+            <MetricCard
+              title="Average Distance"
+              value={`${analysisResult.averageHeadDistance.toFixed(2)} units`}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="analytics-dashboard" style={{ padding: '20px' }}>
+      <h2>Session Analytics</h2>
+      
+      <SessionDataUploader onDataLoaded={handleDataLoaded} />
+
+      {analysisResult && (
+        <div className="dashboard-content" style={{ marginTop: '20px' }}>
+          <div className="tab-buttons" style={{
+            display: 'flex',
+            gap: '10px',
+            marginBottom: '20px'
+          }}>
+            {(['overview', 'fixations', 'saccades', 'head', 'spatial'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: activeTab === tab ? '#4CAF50' : '#f0f0f0',
+                  color: activeTab === tab ? 'white' : '#333',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <div className="tab-content">
+            {activeTab === 'overview' && renderOverviewTab()}
+            {activeTab === 'fixations' && renderFixationsTab()}
+            {activeTab === 'saccades' && renderSaccadesTab()}
+            {activeTab === 'head' && renderHeadMovementTab()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MetricCard: React.FC<{ title: string; value: string }> = ({ title, value }) => (
+  <div style={{
+    padding: '15px',
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  }}>
+    <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '5px' }}>{title}</div>
+    <div style={{ fontSize: '1.2em', fontWeight: 'bold' }}>{value}</div>
+  </div>
+);
+
+export default AnalyticsDashboard; 

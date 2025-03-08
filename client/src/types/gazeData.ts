@@ -1,3 +1,9 @@
+interface EyeData {
+  x: number;
+  y: number;
+  pupilD?: number;
+}
+
 export interface GazeData {
   // Basic gaze data
   x: number;
@@ -41,6 +47,9 @@ export interface GazeData {
   gazeDistance?: number;
   gazeVelocity?: number;
   blinkRate?: number;
+  
+  leftEye?: EyeData;
+  rightEye?: EyeData;
 }
 
 export interface SessionConfig {
