@@ -1,13 +1,14 @@
 {
+  "$schema": "https://json.schemastore.org/package",
   "name": "gazetracker",
   "version": "1.0.0",
   "description": "Eye tracking application using GazeCloud API",
   "scripts": {
     "start": "concurrently --kill-others-on-fail \"npm run server\" \"npm run client\"",
-    "server": "nodemon --watch api/**/* -e ts,json --exec ts-node api/server.ts",
+    "server": "nodemon --watch server/src/**/* -e ts,json --exec ts-node server/src/server.ts",
     "client": "cd client && npm start",
     "dev": "npm run start",
-    "dev:server": "nodemon --watch api/**/* -e ts,json api/server.ts",
+    "dev:server": "nodemon --watch server/src/**/* -e ts,json server/src/server.ts",
     "dev:client": "cd client && npm start",
     "dev:setup": "concurrently \"npm install\" \"cd client && npm install\"",
     "dev:clean": "rm -rf node_modules client/node_modules",
@@ -22,7 +23,7 @@
     "test:ci": "cd client && npm test -- --ci --coverage --maxWorkers=2",
     "lint": "cd client && npm run lint",
     "lint:fix": "cd client && npm run lint:fix",
-    "clean:all": "rm -rf node_modules client/node_modules client/build client/dist",
+    "clean:all": "rm -rf node_modules client/node_modules client/build client/dist server/dist",
     "reset:hard": "npm run clean:all && npm run dev:setup"
   },
   "dependencies": {
@@ -31,7 +32,10 @@
     "d3": "^7.8.5",
     "d3-hexbin": "^0.2.2",
     "date-fns": "^4.1.0",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.2.1",
+    "helmet": "^7.1.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.2",

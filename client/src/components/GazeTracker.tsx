@@ -1,57 +1,112 @@
-import React, { useEffect, useRef } from 'react';
-import type { GazeData } from '../types/gazeData';
+/// <reference types="react" />
 
-interface GazeTrackerProps {
-  onGazeData?: (data: GazeData) => void;
-}
+import React, { useCallback, useState } from 'react';
+import { startTracking, stopTracking } from '../lib/gazecloud';
+import { fetchApi } from '../lib/api';
+import type { GazeData, SessionConfig } from '../types/gazeData';
 
-const GazeTracker: React.FC<GazeTrackerProps> = ({ onGazeData }) => {
-  const gazePointRef = useRef<HTMLDivElement>(null);
+export default function GazeTracker() {
+  const [isTracking, setIsTracking] = useState(false);
+  const [config, setConfig] = useState<SessionConfig>({
+    participantId: '',
+    isPilot: false
+  });
 
-  useEffect(() => {
-    if (!window.GazeCloudAPI) {
-      console.error('GazeCloudAPI not found. Make sure the script is loaded properly.');
-      return;
-    }
+  const handleStartSession = useCallback(async () => {
+    // Create new session with config
+    await fetchApi('api/sessions', {
+      method: 'POST',
+      body: JSON.stringify(config)
+    });
 
-    const handleGazeData = (data: GazeData) => {
-      if (gazePointRef.current) {
-        gazePointRef.current.style.display = 'block';
-        gazePointRef.current.style.transform = `translate(${data.x}px, ${data.y}px)`;
-      }
-      onGazeData?.(data);
-    };
+    // Start eye tracking
+    startTracking(
+      (data: GazeData) => {
+        // Send gaze data to current session
+        fetchApi('api/sessions/current/gaze', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }).catch(console.error);
+      },
+      () => console.log('Calibration complete')
+    );
+    setIsTracking(true);
+  }, [config]);
 
-    // Add event listener for gaze data
-    window.GazeCloudAPI.OnResult = handleGazeData;
+  const handleStopSession = useCallback(async () => {
+    // Stop eye tracking
+    stopTracking();
+    setIsTracking(false);
 
-    return () => {
-      // Cleanup
-      if (window.GazeCloudAPI) {
-        window.GazeCloudAPI.OnResult = () => {};
-      }
-    };
-  }, [onGazeData]);
+    // End current session using DELETE
+    await fetchApi('api/sessions/current', {
+      method: 'DELETE'
+    });
+
+    // Reset config
+    setConfig({
+      participantId: '',
+      isPilot: false
+    });
+  }, []);
 
   return (
-    <div className="gaze-tracker">
-      <div 
-        ref={gazePointRef}
-        className="gaze-point"
-        style={{
-          display: 'none',
-          position: 'fixed',
-          width: '20px',
-          height: '20px',
-          borderRadius: '50%',
-          backgroundColor: 'rgba(255, 0, 0, 0.5)',
-          pointerEvents: 'none',
-          zIndex: 9999,
-          transform: 'translate(-50%, -50%)'
-        }}
-      />
+    <div className="session-control">
+      <h2>Session Control</h2>
+      
+      <div className="config-form">
+        <div className="form-group">
+          <label htmlFor="participantId">Participant ID:</label>
+          <input
+            type="text"
+            id="participantId"
+            value={config.participantId}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+              setConfig((prev: SessionConfig) => ({
+                ...prev,
+                participantId: e.target.value
+              }))
+            }
+            disabled={isTracking}
+          />
+        </div>
+
+        <div className="form-group">
+          <label>
+            <input
+              type="checkbox"
+              checked={config.isPilot}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                setConfig((prev: SessionConfig) => ({
+                  ...prev,
+                  isPilot: e.target.checked
+                }))
+              }
+              disabled={isTracking}
+            />
+            Pilot Session
+          </label>
+        </div>
+      </div>
+
+      <div className="button-group">
+        <button 
+          type="button"
+          onClick={handleStartSession}
+          disabled={isTracking || !config.participantId}
+        >
+          Start Session
+        </button>
+        <button 
+          type="button"
+          onClick={handleStopSession}
+          disabled={!isTracking}
+        >
+          End Session
+        </button>
+      </div>
+
+      <div id="gaze" className="gaze-point" style={{ display: 'none' }} />
     </div>
   );
-};
-
-export default GazeTracker;
+}
