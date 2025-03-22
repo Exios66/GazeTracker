@@ -6,8 +6,8 @@ pydantic==2.5.2
 
 # Web Framework & API
 flask==2.3.3
-flask-cors==4.0.0
-gunicorn==22.0.0
+flask-cors==4.0.2
+gunicorn==23.0.0
 
 # Data Processing & Analysis
 scikit-learn==1.5.1
